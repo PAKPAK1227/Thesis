@@ -50,10 +50,25 @@ if ticker:
         sector = info.get("sector", "N/A")
         current_price = info.get("currentPrice", "N/A")
         market_cap = info.get("marketCap", "N/A")
+        trailing_pe = info.get("trailingPE", "N/A")
+        forward_pe = info.get("forwardPE", "N/A")
+        fifty_two_week_high = info.get("fiftyTwoWeekHigh", "N/A")
+        fifty_two_week_low = info.get("fiftyTwoWeekLow", "N/A")
+        profit_margins = info.get("profitMargins", "N/A")
+        revenue_growth = info.get("revenueGrowth", "N/A")
 
         highest_close = history["Close"].max()
         lowest_close = history["Close"].min()
         avg_close = history["Close"].mean()
+
+        fundamentals_text = f"""
+        Trailing P/E: {trailing_pe}
+        Forward P/E: {forward_pe}
+        52-Week High: {fifty_two_week_high}
+        52-Week Low: {fifty_two_week_low}
+        Profit Margins: {profit_margins}
+        Revenue Growth: {revenue_growth}
+        """
 
         # --- Company header ------------------------------------------------
         st.subheader(company_name)
@@ -142,33 +157,62 @@ if ticker:
             Lowest Close: {lowest_close}
             Average Close: {avg_close}
 
+            Fundamentals:
+            {fundamentals_text}
+
             Recent News:
             {news_text}
 
             Provide the output in this exact structure:
 
-            ### Overall Sentiment
-            Bullish, Bearish, Neutral, or Mixed. Give a 1-2 sentence explanation.
+            ### Executive Summary
+            Provide a concise 2-3 sentence overview of the company's current situation based on the fundamentals and recent news.
 
-            ### Key Drivers
-            - List 3-5 major themes affecting the company.
+            ### Investment Thesis
+            Explain the primary reason the company could outperform over the medium to long term.
+
+            ### Key Catalysts
+            List 3-5 positive developments or events that could drive future growth.
+
+            ### Financial Snapshot
+            Discuss:
+            - Valuation (P/E ratios)
+            - Revenue growth
+            - Profitability
+            - Current price relative to the 52-week range
+            - Any notable trends in the stock's recent performance
+
+            ### Risk Factors
+            List 3-5 major risks investors should monitor.
 
             ### Bull Case
-            - Explain the strongest positive argument for the stock.
+            Describe the strongest optimistic scenario for the company.
+
+            ### Base Case
+            Describe the most likely outcome if the company continues performing in line with expectations.
 
             ### Bear Case
-            - Explain the strongest risks or negative argument.
+            Describe the strongest pessimistic scenario for the company.
 
-            ### Key Risks to Watch
-            - List 3-5 risks investors should monitor.
+            ### Conclusion
+            Provide a final 2-3 sentence summary of the company's overall investment narrative.
 
-            ### Analyst-Style Outlook
-            Write a concise paragraph summarizing the investment narrative.
+            Formatting Requirements:
+            - Never use dollar signs ($).
+            - Write all currency values using USD.
+            - Example: USD 297.55 instead of $297.55.
+            - Do not use markdown emphasis or italics.
+            
+            Important:
+            - Use professional but accessible language.
+            - Reference specific numbers from the provided fundamentals whenever relevant.
+            - Focus on analysis rather than simply repeating the news.
+            - Do not provide a buy, sell, or hold recommendation.
             """
 
             
 
-            st.subheader("AI Investment Brief")
+            st.subheader("AI Investment Memo")
 
             if st.button("Generate AI Analysis"):
                 with st.spinner("Analyzing recent news..."):
