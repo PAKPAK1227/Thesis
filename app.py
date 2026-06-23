@@ -1,4 +1,3 @@
-import re
 import html
 import time
 import streamlit as st
@@ -7,6 +6,8 @@ import altair as alt
 from openai import OpenAI
 from dotenv import load_dotenv
 import os
+
+import logic
 
 load_dotenv()
 
@@ -80,75 +81,12 @@ def news_card(title, pub_date, summary, url=""):
     )
 
 
-def _md_to_html(text: str) -> str:
-    """Convert bullet/numbered lists and paragraphs to HTML for memo cards."""
-    lines = text.split('\n')
-    out = []
-    in_ul = in_ol = False
-
-    def close_lists():
-        nonlocal in_ul, in_ol
-        if in_ul:
-            out.append('</ul>'); in_ul = False
-        if in_ol:
-            out.append('</ol>'); in_ol = False
-
-    def fmt(s: str) -> str:
-        s = html.escape(s, quote=False)
-        s = re.sub(r'\*\*(.+?)\*\*', r'<strong>\1</strong>', s)
-        return s
-
-    for line in lines:
-        s = line.strip()
-        if not s:
-            close_lists()
-            continue
-        if s.startswith('- ') or s.startswith('• '):
-            if in_ol:
-                out.append('</ol>'); in_ol = False
-            if not in_ul:
-                out.append('<ul style="margin:8px 0;padding-left:20px;">')
-                in_ul = True
-            out.append(f'<li style="margin:3px 0;line-height:1.6;">{fmt(s[2:])}</li>')
-        elif re.match(r'^\d+\.\s', s):
-            if in_ul:
-                out.append('</ul>'); in_ul = False
-            if not in_ol:
-                out.append('<ol style="margin:8px 0;padding-left:20px;">')
-                in_ol = True
-            out.append(f'<li style="margin:3px 0;line-height:1.6;">{fmt(re.sub(r"^\d+\.\s*", "", s))}</li>')
-        else:
-            close_lists()
-            out.append(f'<p style="margin:6px 0;line-height:1.6;">{fmt(s)}</p>')
-
-    close_lists()
-    return '\n'.join(out)
-
-
 def render_styled_memo(analysis: str):
     """Parse the AI memo and render each section as a color-coded card."""
-    section_colors = {
-        "Executive Summary":  "#60A5FA",
-        "Investment Thesis":  "#A78BFA",
-        "Key Catalysts":      "#34D399",
-        "Financial Snapshot": "#94A3B8",
-        "Risk Factors":       "#FBBF24",
-        "Bull Case":          "#22C55E",
-        "Base Case":          "#94A3B8",
-        "Bear Case":          "#EF4444",
-        "Conclusion":         "#60A5FA",
-    }
-
-    parts = re.split(r'\n(?=### )', analysis.strip())
-
-    for part in parts:
-        if not part.strip():
-            continue
-        lines = part.strip().split('\n', 1)
-        header = lines[0].lstrip('#').strip()
-        body   = lines[1].strip() if len(lines) > 1 else ""
-        color  = section_colors.get(header, "#94A3B8")
-        body_html = _md_to_html(body) if body else ""
+    for section in logic.parse_memo_sections(analysis):
+        header = section["header"]
+        color  = section["color"]
+        body_html = logic.md_to_html(section["body"]) if section["body"] else ""
 
         st.markdown(
             f"""
@@ -190,47 +128,33 @@ with st.sidebar:
     st.caption("Thesis generates AI-powered investment research using market data, fundamentals, and recent news.")
 
 
-# Human-friendly labels for the selected period
-period_labels = {
-    "1mo": "the Last Month",
-    "3mo": "the Last 3 Months",
-    "6mo": "the Last 6 Months",
-    "1y":  "the Last Year",
-}
-
 if ticker:
-    ticker = ticker.upper().strip()
+    ticker  = logic.clean_ticker(ticker)
     stock   = yf.Ticker(ticker)
     history = stock.history(period=period)
 
-    if history.empty:
+    if not logic.is_valid_history(history):
         st.error("Invalid ticker. Please double-check the symbol and try again.")
     else:
-        info = stock.info
+        data = logic.extract_info(stock.info)
 
-        company_name       = info.get("longName",        "N/A")
-        sector             = info.get("sector",          "N/A")
-        current_price      = info.get("currentPrice",    "N/A")
-        market_cap         = info.get("marketCap",       "N/A")
-        trailing_pe        = info.get("trailingPE",      "N/A")
-        forward_pe         = info.get("forwardPE",       "N/A")
-        fifty_two_week_high = info.get("fiftyTwoWeekHigh", "N/A")
-        fifty_two_week_low  = info.get("fiftyTwoWeekLow",  "N/A")
-        profit_margins     = info.get("profitMargins",   "N/A")
-        revenue_growth     = info.get("revenueGrowth",   "N/A")
+        company_name        = data["company_name"]
+        sector              = data["sector"]
+        current_price       = data["current_price"]
+        market_cap          = data["market_cap"]
+        trailing_pe         = data["trailing_pe"]
+        forward_pe          = data["forward_pe"]
+        fifty_two_week_high = data["fifty_two_week_high"]
+        fifty_two_week_low  = data["fifty_two_week_low"]
+        profit_margins      = data["profit_margins"]
+        revenue_growth      = data["revenue_growth"]
 
-        highest_close = history["Close"].max()
-        lowest_close  = history["Close"].min()
-        avg_close     = history["Close"].mean()
+        stats = logic.price_stats(history)
+        highest_close = stats["highest"]
+        lowest_close  = stats["lowest"]
+        avg_close     = stats["average"]
 
-        fundamentals_text = f"""
-        Trailing P/E: {trailing_pe}
-        Forward P/E: {forward_pe}
-        52-Week High: {fifty_two_week_high}
-        52-Week Low: {fifty_two_week_low}
-        Profit Margins: {profit_margins}
-        Revenue Growth: {revenue_growth}
-        """
+        fundamentals_text = logic.build_fundamentals_text(data)
 
         # --- Company header -----------------------------------------------
         st.title(f"{company_name} ({ticker})")
@@ -240,28 +164,18 @@ if ticker:
         c1, c2, c3, c4 = st.columns(4)
 
         with c1:
-            price_val = f"${current_price:,.2f}" if current_price != "N/A" else "N/A"
-            metric_card("Price", price_val)
+            metric_card("Price", logic.format_price(current_price))
 
         with c2:
-            if market_cap != "N/A":
-                metric_card("Market Cap", f"${market_cap / 1_000_000_000_000:.2f}T")
-            else:
-                metric_card("Market Cap", "N/A")
+            metric_card("Market Cap", logic.format_market_cap_trillions(market_cap))
 
         with c3:
-            if revenue_growth != "N/A":
-                rg = revenue_growth * 100
-                metric_card("Revenue Growth", f"{abs(rg):.1f}%", positive=(rg >= 0))
-            else:
-                metric_card("Revenue Growth", "N/A")
+            rg_text, rg_positive = logic.format_percent_signed(revenue_growth)
+            metric_card("Revenue Growth", rg_text or "N/A", positive=rg_positive)
 
         with c4:
-            if profit_margins != "N/A":
-                pm = profit_margins * 100
-                metric_card("Profit Margin", f"{abs(pm):.1f}%", positive=(pm >= 0))
-            else:
-                metric_card("Profit Margin", "N/A")
+            pm_text, pm_positive = logic.format_percent_signed(profit_margins)
+            metric_card("Profit Margin", pm_text or "N/A", positive=pm_positive)
 
         st.divider()
 
@@ -271,101 +185,34 @@ if ticker:
         f1, f2, f3 = st.columns(3)
 
         with f1:
-            pe_str = f"{trailing_pe:.1f}x" if isinstance(trailing_pe, (int, float)) else str(trailing_pe)
-            metric_card("Trailing P/E", pe_str)
+            metric_card("Trailing P/E", logic.format_pe(trailing_pe))
 
         with f2:
-            fpe_str = f"{forward_pe:.1f}x" if isinstance(forward_pe, (int, float)) else str(forward_pe)
-            metric_card("Forward P/E", fpe_str)
+            metric_card("Forward P/E", logic.format_pe(forward_pe))
 
         with f3:
-            if fifty_two_week_low != "N/A" and fifty_two_week_high != "N/A":
-                metric_card("52W Range", f"${fifty_two_week_low:.2f} – ${fifty_two_week_high:.2f}")
-            else:
-                metric_card("52W Range", "N/A")
+            metric_card("52W Range", logic.format_52w_range(fifty_two_week_low, fifty_two_week_high))
 
         st.divider()
 
         # --- Fetch news early (needed for AI memo prompt) -----------------
         news      = stock.news
-        news_text = ""
-
-        for article in (news or [])[:5]:
-            content = article.get("content", {})
-            title   = content.get("title",   "No title")
-            summary = content.get("summary", "No summary available")
-            news_text += f"Title: {title}\nSummary: {summary}\n\n"
+        news_text = logic.build_news_text(news)
 
         # --- AI Investment Memo -------------------------------------------
-        prompt = f"""
-        You are an investment research analyst.
-
-        Analyze the company below using only the provided market data and recent news.
-        Do not give direct financial advice. Do not tell the user to buy, sell, or hold.
-        Write in a professional but beginner-friendly tone.
-
-        Company: {company_name}
-        Ticker: {ticker}
-        Sector: {sector}
-        Current Price: {current_price}
-        Market Cap: {market_cap}
-        Selected Time Period: {period_labels[period]}
-        Highest Close: {highest_close}
-        Lowest Close: {lowest_close}
-        Average Close: {avg_close}
-
-        Fundamentals:
-        {fundamentals_text}
-
-        Recent News:
-        {news_text}
-
-        Provide the output in this exact structure:
-
-        ### Executive Summary
-        Provide a concise 2-3 sentence overview of the company's current situation based on the fundamentals and recent news.
-
-        ### Investment Thesis
-        Explain the primary reason the company could outperform over the medium to long term.
-
-        ### Key Catalysts
-        List 3-5 positive developments or events that could drive future growth.
-
-        ### Financial Snapshot
-        Discuss:
-        - Valuation (P/E ratios)
-        - Revenue growth
-        - Profitability
-        - Current price relative to the 52-week range
-        - Any notable trends in the stock's recent performance
-
-        ### Risk Factors
-        List 3-5 major risks investors should monitor.
-
-        ### Bull Case
-        Describe the strongest optimistic scenario for the company.
-
-        ### Base Case
-        Describe the most likely outcome if the company continues performing in line with expectations.
-
-        ### Bear Case
-        Describe the strongest pessimistic scenario for the company.
-
-        ### Conclusion
-        Provide a final 2-3 sentence summary of the company's overall investment narrative.
-
-        Formatting Requirements:
-        - Never use dollar signs ($).
-        - Write all currency values using USD.
-        - Example: USD 297.55 instead of $297.55.
-        - Do not use markdown emphasis or italics.
-
-        Important:
-        - Use professional but accessible language.
-        - Reference specific numbers from the provided fundamentals whenever relevant.
-        - Focus on analysis rather than simply repeating the news.
-        - Do not provide a buy, sell, or hold recommendation.
-        """
+        prompt = logic.build_memo_prompt(
+            company_name=company_name,
+            ticker=ticker,
+            sector=sector,
+            current_price=current_price,
+            market_cap=market_cap,
+            period=period,
+            highest_close=highest_close,
+            lowest_close=lowest_close,
+            avg_close=avg_close,
+            fundamentals_text=fundamentals_text,
+            news_text=news_text,
+        )
 
         st.subheader("AI Investment Memo")
 
@@ -374,24 +221,21 @@ if ticker:
 
         if st.button("Generate Investment Memo", type="primary"):
             with st.spinner("Analyzing recent news..."):
-                response = client.responses.create(
-                    model="gpt-5-mini",
-                    input=prompt
-                )
-                render_styled_memo(response.output_text)
+                memo = logic.generate_memo(client, prompt)
+                render_styled_memo(memo)
 
         st.divider()
 
         # --- Period performance -------------------------------------------
-        st.markdown(f"##### Within {period_labels[period]}")
+        st.markdown(f"##### Within {logic.period_label(period)}")
 
         m1, m2, m3 = st.columns(3)
         with m1:
-            metric_card("Highest Close", f"${highest_close:,.2f}")
+            metric_card("Highest Close", logic.format_price(highest_close))
         with m2:
-            metric_card("Lowest Close",  f"${lowest_close:,.2f}")
+            metric_card("Lowest Close",  logic.format_price(lowest_close))
         with m3:
-            metric_card("Average Close", f"${avg_close:,.2f}")
+            metric_card("Average Close", logic.format_price(avg_close))
 
         st.divider()
 
@@ -407,28 +251,23 @@ if ticker:
         if not news:
             st.write("No recent news found.")
         else:
-            for article in news[:5]:
-                content  = article.get("content", {})
-                title    = content.get("title",        "No title")
-                summary  = content.get("summary",      "No summary available")
-                pub_date = content.get("pubDate",      "No date available")
-                url      = content.get("canonicalUrl", {}).get("url", "") or ""
-                news_card(title, pub_date, summary, url)
+            for item in logic.parse_news_items(news):
+                news_card(item["title"], item["pub_date"], item["summary"], item["url"])
 
         # --- Comparison section -------------------------------------------
         if ticker2:
-            ticker2  = ticker2.upper().strip()
+            ticker2  = logic.clean_ticker(ticker2)
             stock2   = yf.Ticker(ticker2)
             history2 = stock2.history(period=period)
 
-            if history2.empty:
+            if not logic.is_valid_history(history2):
                 st.error(f"Comparison ticker '{ticker2}' is invalid.")
             else:
-                info2 = stock2.info
+                data2 = logic.extract_info(stock2.info, ticker_fallback=ticker2)
 
-                current_price2 = info2.get("currentPrice", "N/A")
-                market_cap2    = info2.get("marketCap",    "N/A")
-                avg_close2     = history2["Close"].mean()
+                current_price2 = data2["current_price"]
+                market_cap2    = data2["market_cap"]
+                avg_close2     = logic.price_stats(history2)["average"]
 
                 st.divider()
                 st.subheader(f"Comparison: {ticker} vs {ticker2}")
@@ -439,19 +278,19 @@ if ticker:
                     st.markdown(f"### {ticker}")
                     st.write(company_name)
                     if current_price != "N/A":
-                        st.metric("Current Price", f"${current_price:,.2f}")
+                        st.metric("Current Price", logic.format_price(current_price))
                     if market_cap != "N/A":
                         st.metric("Market Cap", f"${market_cap:,.0f}")
-                    st.metric("Average Close", f"${avg_close:,.2f}")
+                    st.metric("Average Close", logic.format_price(avg_close))
 
                 with c2:
                     st.markdown(f"### {ticker2}")
-                    st.write(info2.get("longName", ticker2))
+                    st.write(data2["company_name"])
                     if current_price2 != "N/A":
-                        st.metric("Current Price", f"${current_price2:,.2f}")
+                        st.metric("Current Price", logic.format_price(current_price2))
                     if market_cap2 != "N/A":
                         st.metric("Market Cap", f"${market_cap2:,.0f}")
-                    st.metric("Average Close", f"${avg_close2:,.2f}")
+                    st.metric("Average Close", logic.format_price(avg_close2))
 
                 st.subheader(f"{ticker2} Price History")
                 chart_data2 = history2.reset_index()
