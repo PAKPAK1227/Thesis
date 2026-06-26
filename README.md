@@ -4,6 +4,8 @@ Thesis is an AI-powered equity research platform that helps users explore public
 
 It combines structured financial data with recent news context to produce balanced, beginner-friendly company analysis without providing direct investment recommendations.
 
+Live Demo: **Live Demo:** [Open Thesis](https://thesis-equity-research.streamlit.app/)
+
 ## Features
 
 - Search and analyze publicly traded companies by ticker symbol
