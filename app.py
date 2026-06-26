@@ -54,6 +54,20 @@ def green_line_chart(df, height=300):
     )
 
 
+@st.cache_data(ttl=900, show_spinner=False)
+def fetch_market_snapshot():
+    """Fetch recent history for the major U.S. market indexes."""
+    histories = {}
+
+    for symbol in logic.MARKET_INDEXES.values():
+        try:
+            histories[symbol] = yf.Ticker(symbol).history(period="5d")
+        except Exception:
+            histories[symbol] = None
+
+    return logic.market_snapshot_from_histories(histories)
+
+
 def news_card(title, pub_date, summary, url=""):
     safe_title   = html.escape(title)
     safe_summary = html.escape(summary)
@@ -102,6 +116,11 @@ def render_styled_memo(analysis: str):
         )
 
 
+# Clear ticker before any widget is instantiated
+if st.session_state.get("_clear_ticker"):
+    del st.session_state["_clear_ticker"]
+    st.session_state["ticker_input"] = ""
+
 # --- Sidebar --------------------------------------------------------------
 with st.sidebar:
     st.markdown(
@@ -117,7 +136,7 @@ with st.sidebar:
     )
     st.divider()
     st.header("Search")
-    ticker  = st.text_input("Stock ticker", placeholder="e.g. AAPL")
+    ticker  = st.text_input("Stock ticker", placeholder="e.g. AAPL", key="ticker_input")
     ticker2 = st.text_input("Comparison ticker optional", placeholder="e.g. MSFT")
 
     period = st.selectbox(
@@ -155,6 +174,11 @@ if ticker:
         avg_close     = stats["average"]
 
         fundamentals_text = logic.build_fundamentals_text(data)
+
+        # --- Back button --------------------------------------------------
+        if st.button("← Back to Home"):
+            st.session_state["_clear_ticker"] = True
+            st.rerun()
 
         # --- Company header -----------------------------------------------
         st.title(f"{company_name} ({ticker})")
@@ -265,9 +289,34 @@ if ticker:
             else:
                 data2 = logic.extract_info(stock2.info, ticker_fallback=ticker2)
 
+                fundamentals_text2 = logic.build_fundamentals_text(data2)
+
+                try:
+                    news2 = stock2.news
+                except Exception:
+                    news2 = []
+
+                news_text2 = logic.build_news_text(news2)
+
                 current_price2 = data2["current_price"]
                 market_cap2    = data2["market_cap"]
                 avg_close2     = logic.price_stats(history2)["average"]
+
+                comparison_prompt = logic.build_comparison_prompt(
+                    company_name1=company_name,
+                    ticker1=ticker,
+                    sector1=sector,
+                    fundamentals_text1=fundamentals_text,
+                    news_text1=news_text,
+                    average_close1=avg_close,
+                    company_name2=data2["company_name"],
+                    ticker2=ticker2,
+                    sector2=data2["sector"],
+                    fundamentals_text2=fundamentals_text2,
+                    news_text2=news_text2,
+                    average_close2=avg_close2,
+                    period=period,
+                )
 
                 st.divider()
                 st.subheader(f"Comparison: {ticker} vs {ticker2}")
@@ -291,6 +340,13 @@ if ticker:
                     if market_cap2 != "N/A":
                         st.metric("Market Cap", f"${market_cap2:,.0f}")
                     st.metric("Average Close", logic.format_price(avg_close2))
+
+                st.subheader("AI Comparison Memo")
+
+                if st.button("Generate AI Comparison Memo", type="primary"):
+                    with st.spinner(f"Comparing {ticker} and {ticker2}..."):
+                        comparison_memo = logic.generate_memo(client, comparison_prompt)
+                        render_styled_memo(comparison_memo)
 
                 st.subheader(f"{ticker2} Price History")
                 chart_data2 = history2.reset_index()
@@ -326,35 +382,32 @@ else:
     st.divider()
 
     st.subheader("Market Snapshot")
+    st.caption("Latest available market session")
 
-    s1, s2, s3 = st.columns(3)
+    snapshot = fetch_market_snapshot()
+    columns = st.columns(len(snapshot))
 
-    with s1:
-        st.markdown("""
-        <div class="metric-card">
-            <p class="metric-label">S&amp;P 500</p>
-            <h2 class="positive">▲ 0.8%</h2>
-            <p class="muted">Broad market strength</p>
-        </div>
-        """, unsafe_allow_html=True)
+    for column, index_data in zip(columns, snapshot):
+        with column:
+            change_pct = index_data["change_pct"]
+            close = index_data["close"]
 
-    with s2:
-        st.markdown("""
-        <div class="metric-card">
-            <p class="metric-label">NASDAQ</p>
-            <h2 class="positive">▲ 1.2%</h2>
-            <p class="muted">Tech-led gains</p>
-        </div>
-        """, unsafe_allow_html=True)
+            if change_pct is None or close is None:
+                metric_card(index_data["label"], "Unavailable")
+                st.caption("Market data unavailable")
+            else:
+                direction = (
+                    True if change_pct > 0
+                    else False if change_pct < 0
+                    else None
+                )
 
-    with s3:
-        st.markdown("""
-        <div class="metric-card">
-            <p class="metric-label">DOW</p>
-            <h2 class="negative">▼ 0.3%</h2>
-            <p class="muted">Mixed blue-chip performance</p>
-        </div>
-        """, unsafe_allow_html=True)
+                metric_card(
+                    index_data["label"],
+                    f"{abs(change_pct):.2f}%",
+                    positive=direction,
+                )
+                st.caption(f"Latest close: {logic.format_price(close)}")
 
     st.divider()
 

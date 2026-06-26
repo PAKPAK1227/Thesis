@@ -23,6 +23,12 @@ PERIOD_LABELS = {
     "1y":  "the Last Year",
 }
 
+MARKET_INDEXES = {
+    "S&P 500": "^GSPC",
+    "Nasdaq": "^IXIC",
+    "Dow Jones": "^DJI",
+}
+
 # Colour assigned to each AI-memo section header.
 SECTION_COLORS = {
     "Executive Summary":  "#60A5FA",
@@ -34,6 +40,11 @@ SECTION_COLORS = {
     "Base Case":          "#94A3B8",
     "Bear Case":          "#EF4444",
     "Conclusion":         "#60A5FA",
+    "Executive Comparison":              "#60A5FA",
+    "Valuation and Financial Comparison": "#A78BFA",
+    "Key Strengths":                     "#34D399",
+    "Key Risks":                         "#FBBF24",
+    "Investor Profile Considerations":   "#94A3B8",
 }
 
 DEFAULT_SECTION_COLOR = "#94A3B8"
@@ -63,6 +74,47 @@ def price_stats(history):
         "lowest":  closes.min(),
         "average": closes.mean(),
     }
+
+
+def market_snapshot_from_histories(histories):
+    """Build latest close and daily percentage-change data for major indices."""
+    snapshot = []
+
+    for label, symbol in MARKET_INDEXES.items():
+        history = histories.get(symbol)
+
+        if not is_valid_history(history) or "Close" not in history:
+            snapshot.append({
+                "label": label,
+                "symbol": symbol,
+                "close": None,
+                "change_pct": None,
+            })
+            continue
+
+        closes = history["Close"].dropna()
+
+        if len(closes) < 2:
+            snapshot.append({
+                "label": label,
+                "symbol": symbol,
+                "close": None,
+                "change_pct": None,
+            })
+            continue
+
+        latest_close = float(closes.iloc[-1])
+        previous_close = float(closes.iloc[-2])
+        change_pct = ((latest_close - previous_close) / previous_close) * 100
+
+        snapshot.append({
+            "label": label,
+            "symbol": symbol,
+            "close": latest_close,
+            "change_pct": change_pct,
+        })
+
+    return snapshot
 
 
 def period_label(period):
@@ -249,6 +301,88 @@ def build_memo_prompt(*, company_name, ticker, sector, current_price, market_cap
         - Focus on analysis rather than simply repeating the news.
         - Do not provide a buy, sell, or hold recommendation.
         """
+
+
+def build_comparison_prompt(
+    *,
+    company_name1,
+    ticker1,
+    sector1,
+    fundamentals_text1,
+    news_text1,
+    average_close1,
+    company_name2,
+    ticker2,
+    sector2,
+    fundamentals_text2,
+    news_text2,
+    average_close2,
+    period,
+):
+    """Construct a balanced side-by-side investment comparison prompt."""
+    return f"""
+        You are an investment research analyst.
+
+        Compare the two companies below using only the provided fundamentals,
+        market data, and recent news. Do not give direct financial advice.
+        Do not tell the user to buy, sell, or hold either stock.
+
+        Write in a professional but beginner-friendly tone.
+
+        Company One:
+        Name: {company_name1}
+        Ticker: {ticker1}
+        Sector: {sector1}
+        Average Closing Price During {period_label(period)}: {average_close1}
+
+        Fundamentals:
+        {fundamentals_text1}
+
+        Recent News:
+        {news_text1}
+
+        Company Two:
+        Name: {company_name2}
+        Ticker: {ticker2}
+        Sector: {sector2}
+        Average Closing Price During {period_label(period)}: {average_close2}
+
+        Fundamentals:
+        {fundamentals_text2}
+
+        Recent News:
+        {news_text2}
+
+        Provide the output in this exact structure:
+
+        ### Executive Comparison
+        Give a concise overview of how the two companies differ in business profile,
+        financial position, and recent market narrative.
+
+        ### Valuation and Financial Comparison
+        Compare valuation, revenue growth, profitability, and stock performance.
+
+        ### Key Strengths
+        List the strongest qualities of each company.
+
+        ### Key Risks
+        List the most important risks for each company.
+
+        ### Investor Profile Considerations
+        Explain what type of investor priorities each company may align with,
+        such as growth, stability, value, or higher-risk opportunities.
+        Do not recommend either company.
+
+        ### Conclusion
+        Give a balanced final summary of the major trade-offs between the two companies.
+
+        Formatting Requirements:
+        - Never use dollar signs ($).
+        - Write currency values using USD.
+        - Do not use markdown emphasis or italics.
+        - Use headings exactly as written above.
+        - Focus on comparison, not separate standalone analyses.
+    """
 
 
 def generate_memo(client, prompt, model="gpt-5-mini"):
