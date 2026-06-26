@@ -3,7 +3,7 @@ import time
 import streamlit as st
 import yfinance as yf
 import altair as alt
-from openai import OpenAI
+from openai import APIConnectionError, APIStatusError, OpenAI, RateLimitError
 from dotenv import load_dotenv
 import os
 
@@ -11,7 +11,8 @@ import logic
 
 load_dotenv()
 
-client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+api_key = os.getenv("OPENAI_API_KEY")
+client = OpenAI(api_key=api_key) if api_key else None
 
 # --- Page setup -----------------------------------------------------------
 st.set_page_config(
@@ -93,6 +94,30 @@ def news_card(title, pub_date, summary, url=""):
         """,
         unsafe_allow_html=True,
     )
+
+
+def generate_and_render_memo(prompt, spinner_text):
+    """Generate and display an AI memo with user-friendly error handling."""
+    if client is None:
+        st.error(
+            "AI analysis is unavailable because no OpenAI API key was found. "
+            "Add OPENAI_API_KEY to your .env file and restart the app."
+        )
+        return
+
+    try:
+        with st.spinner(spinner_text):
+            memo = logic.generate_memo(client, prompt)
+        render_styled_memo(memo)
+
+    except RateLimitError:
+        st.error("The AI service is temporarily rate-limited. Please wait a moment and try again.")
+    except APIConnectionError:
+        st.error("Could not connect to the AI service. Check your internet connection and try again.")
+    except APIStatusError:
+        st.error("The AI service returned an error. Please try again shortly.")
+    except Exception:
+        st.error("Something unexpected happened while generating the memo. Please try again.")
 
 
 def render_styled_memo(analysis: str):
@@ -244,9 +269,10 @@ if ticker:
             st.write(news_text)
 
         if st.button("Generate Investment Memo", type="primary"):
-            with st.spinner("Analyzing recent news..."):
-                memo = logic.generate_memo(client, prompt)
-                render_styled_memo(memo)
+            generate_and_render_memo(
+                prompt,
+                "Analyzing recent news...",
+            )
 
         st.divider()
 
@@ -344,9 +370,10 @@ if ticker:
                 st.subheader("AI Comparison Memo")
 
                 if st.button("Generate AI Comparison Memo", type="primary"):
-                    with st.spinner(f"Comparing {ticker} and {ticker2}..."):
-                        comparison_memo = logic.generate_memo(client, comparison_prompt)
-                        render_styled_memo(comparison_memo)
+                    generate_and_render_memo(
+                        comparison_prompt,
+                        f"Comparing {ticker} and {ticker2}...",
+                    )
 
                 st.subheader(f"{ticker2} Price History")
                 chart_data2 = history2.reset_index()
