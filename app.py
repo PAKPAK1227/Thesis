@@ -83,8 +83,8 @@ def news_card(title, pub_date, summary, url=""):
 
     st.markdown(
         f"""
-        <div style="border:1px solid rgba(128,128,128,0.25);border-radius:8px;
-                    padding:20px 24px;margin-bottom:12px;">
+        <div style="border:1px solid rgba(128,128,128,0.25);border-left:3px solid #22C55E;
+                    border-radius:8px;padding:20px 24px;margin-bottom:12px;">
             <div style="font-weight:600;font-size:1rem;margin-bottom:6px;line-height:1.4;">{safe_title}</div>
             <div style="font-size:0.8rem;color:rgba(255,255,255,0.45);margin-bottom:12px;">{safe_date}</div>
             <div style="font-size:0.9rem;color:rgba(255,255,255,0.8);line-height:1.5;
@@ -160,15 +160,26 @@ with st.sidebar:
         unsafe_allow_html=True,
     )
     st.divider()
-    st.header("Search")
-    ticker  = st.text_input("Stock ticker", placeholder="e.g. AAPL", key="ticker_input")
-    ticker2 = st.text_input("Comparison ticker optional", placeholder="e.g. MSFT")
+    st.markdown(
+        '<div style="font-size:0.7rem;font-weight:700;letter-spacing:0.08em;'
+        'color:rgba(255,255,255,0.4);text-transform:uppercase;margin-bottom:10px;">Stock Lookup</div>',
+        unsafe_allow_html=True,
+    )
+    ticker  = st.text_input("Primary ticker", placeholder="e.g. AAPL", key="ticker_input")
+    ticker2 = st.text_input("Comparison ticker", placeholder="e.g. MSFT (optional)")
 
+    st.markdown(
+        '<div style="font-size:0.7rem;font-weight:700;letter-spacing:0.08em;'
+        'color:rgba(255,255,255,0.4);text-transform:uppercase;margin:14px 0 10px 0;">Time Range</div>',
+        unsafe_allow_html=True,
+    )
     period = st.selectbox(
         "Time Range",
         ["1mo", "3mo", "6mo", "1y"],
+        label_visibility="collapsed",
     )
 
+    st.divider()
     st.caption("Thesis generates AI-powered investment research using market data, fundamentals, and recent news.")
 
 
@@ -265,7 +276,7 @@ if ticker:
 
         st.subheader("AI Investment Memo")
 
-        with st.expander("View news text being analyzed"):
+        with st.expander("Sources used in this analysis"):
             st.write(news_text)
 
         if st.button("Generate Investment Memo", type="primary"):
