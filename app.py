@@ -1,5 +1,4 @@
 import html
-import time
 import streamlit as st
 import yfinance as yf
 import altair as alt
@@ -43,13 +42,18 @@ def metric_card(label, value, positive=None):
     )
 
 
-def green_line_chart(df, height=300):
+def green_line_chart(df, period="1mo", height=300):
+    if period in ("1mo", "3mo"):
+        fmt, ticks = "%b %d", "week"
+    else:
+        fmt, ticks = "%b %Y", "month"
+
     return (
         alt.Chart(df)
         .mark_line(color="#22C55E", strokeWidth=2)
         .encode(
-            x=alt.X("Date:T", axis=alt.Axis(title="")),
-            y=alt.Y("Close:Q", axis=alt.Axis(title="Closing Price (USD)")),
+            x=alt.X("Date:T", axis=alt.Axis(title="", format=fmt, tickCount=ticks, labelAngle=-30)),
+            y=alt.Y("Close:Q", axis=alt.Axis(title="Closing Price (USD)"), scale=alt.Scale(zero=False)),
         )
         .properties(height=height)
     )
@@ -288,7 +292,7 @@ if ticker:
         st.divider()
 
         # --- Period performance -------------------------------------------
-        st.markdown(f"##### Within {logic.period_label(period)}")
+        st.subheader(f"Within {logic.period_label(period)}")
 
         m1, m2, m3 = st.columns(3)
         with m1:
@@ -303,7 +307,7 @@ if ticker:
         # --- Price history chart ------------------------------------------
         st.subheader("Price History")
         chart_data = history.reset_index()
-        st.altair_chart(green_line_chart(chart_data), use_container_width=True)
+        st.altair_chart(green_line_chart(chart_data, period=period), use_container_width=True)
 
         # --- Recent news --------------------------------------------------
         st.divider()
@@ -361,22 +365,24 @@ if ticker:
                 c1, c2 = st.columns(2)
 
                 with c1:
-                    st.markdown(f"### {ticker}")
-                    st.write(company_name)
-                    if current_price != "N/A":
-                        st.metric("Current Price", logic.format_price(current_price))
-                    if market_cap != "N/A":
-                        st.metric("Market Cap", f"${market_cap:,.0f}")
-                    st.metric("Average Close", logic.format_price(avg_close))
+                    st.markdown(
+                        f'<div style="font-size:1.1rem;font-weight:700;margin-bottom:4px;">{ticker}</div>'
+                        f'<div style="font-size:0.85rem;color:rgba(255,255,255,0.5);margin-bottom:14px;">{company_name}</div>',
+                        unsafe_allow_html=True,
+                    )
+                    metric_card("Current Price", logic.format_price(current_price))
+                    metric_card("Market Cap", logic.format_market_cap_trillions(market_cap))
+                    metric_card("Average Close", logic.format_price(avg_close))
 
                 with c2:
-                    st.markdown(f"### {ticker2}")
-                    st.write(data2["company_name"])
-                    if current_price2 != "N/A":
-                        st.metric("Current Price", logic.format_price(current_price2))
-                    if market_cap2 != "N/A":
-                        st.metric("Market Cap", f"${market_cap2:,.0f}")
-                    st.metric("Average Close", logic.format_price(avg_close2))
+                    st.markdown(
+                        f'<div style="font-size:1.1rem;font-weight:700;margin-bottom:4px;">{ticker2}</div>'
+                        f'<div style="font-size:0.85rem;color:rgba(255,255,255,0.5);margin-bottom:14px;">{data2["company_name"]}</div>',
+                        unsafe_allow_html=True,
+                    )
+                    metric_card("Current Price", logic.format_price(current_price2))
+                    metric_card("Market Cap", logic.format_market_cap_trillions(market_cap2))
+                    metric_card("Average Close", logic.format_price(avg_close2))
 
                 st.subheader("AI Comparison Memo")
 
@@ -386,9 +392,11 @@ if ticker:
                         f"Comparing {ticker} and {ticker2}...",
                     )
 
+                st.divider()
+
                 st.subheader(f"{ticker2} Price History")
                 chart_data2 = history2.reset_index()
-                st.altair_chart(green_line_chart(chart_data2), use_container_width=True)
+                st.altair_chart(green_line_chart(chart_data2, period=period), use_container_width=True)
 
 else:
     st.markdown("""
@@ -411,11 +419,14 @@ else:
         "and AI-generated investment memos."
     )
 
+    if "show_ticker_hint" not in st.session_state:
+        st.session_state["show_ticker_hint"] = False
+
     if st.button("Analyze Your Own Stock", type="primary"):
-        msg = st.empty()
-        msg.info("Open the sidebar on the left and enter a stock ticker to begin.")
-        time.sleep(3)
-        msg.empty()
+        st.session_state["show_ticker_hint"] = True
+
+    if st.session_state["show_ticker_hint"]:
+        st.info("Enter a stock ticker in the sidebar to begin.")
 
     st.divider()
 
