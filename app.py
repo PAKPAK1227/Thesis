@@ -185,6 +185,13 @@ with st.sidebar:
 
     st.divider()
     st.caption("Thesis generates AI-powered investment research using market data, fundamentals, and recent news.")
+    st.markdown(
+        '<div style="font-size:0.72rem;color:rgba(255,255,255,0.3);line-height:1.5;margin-top:8px;">'
+        '⚠︎ For informational purposes only. Nothing on this platform constitutes financial advice. '
+        'Always do your own research before making investment decisions.'
+        '</div>',
+        unsafe_allow_html=True,
+    )
 
 
 if ticker:
