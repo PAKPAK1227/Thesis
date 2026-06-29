@@ -73,6 +73,24 @@ def fetch_market_snapshot():
     return logic.market_snapshot_from_histories(histories)
 
 
+@st.cache_data(ttl=3600, show_spinner=False)
+def get_stock_info(ticker):
+    return yf.Ticker(ticker).info
+
+
+@st.cache_data(ttl=900, show_spinner=False)
+def get_stock_history(ticker, period):
+    return yf.Ticker(ticker).history(period=period)
+
+
+@st.cache_data(ttl=1800, show_spinner=False)
+def get_stock_news(ticker):
+    try:
+        return yf.Ticker(ticker).news
+    except Exception:
+        return []
+
+
 def news_card(title, pub_date, summary, url=""):
     safe_title   = html.escape(title)
     safe_summary = html.escape(summary)
@@ -195,14 +213,19 @@ with st.sidebar:
 
 
 if ticker:
-    ticker  = logic.clean_ticker(ticker)
-    stock   = yf.Ticker(ticker)
-    history = stock.history(period=period)
+    ticker = logic.clean_ticker(ticker)
+
+    try:
+        history  = get_stock_history(ticker, period)
+        raw_info = get_stock_info(ticker)
+    except Exception:
+        st.error("Market data is temporarily unavailable due to rate limiting. Please try again in a moment.")
+        st.stop()
 
     if not logic.is_valid_history(history):
         st.error("Invalid ticker. Please double-check the symbol and try again.")
     else:
-        data = logic.extract_info(stock.info)
+        data = logic.extract_info(raw_info)
 
         company_name        = data["company_name"]
         sector              = data["sector"]
@@ -267,7 +290,7 @@ if ticker:
         st.divider()
 
         # --- Fetch news early (needed for AI memo prompt) -----------------
-        news      = stock.news
+        news      = get_stock_news(ticker)
         news_text = logic.build_news_text(news)
 
         # --- AI Investment Memo -------------------------------------------
@@ -328,21 +351,24 @@ if ticker:
 
         # --- Comparison section -------------------------------------------
         if ticker2:
-            ticker2  = logic.clean_ticker(ticker2)
-            stock2   = yf.Ticker(ticker2)
-            history2 = stock2.history(period=period)
+            ticker2 = logic.clean_ticker(ticker2)
+
+            try:
+                history2  = get_stock_history(ticker2, period)
+                raw_info2 = get_stock_info(ticker2)
+            except Exception:
+                st.error(f"Market data for '{ticker2}' is temporarily unavailable. Please try again in a moment.")
+                history2  = None
+                raw_info2 = {}
 
             if not logic.is_valid_history(history2):
                 st.error(f"Comparison ticker '{ticker2}' is invalid.")
             else:
-                data2 = logic.extract_info(stock2.info, ticker_fallback=ticker2)
+                data2 = logic.extract_info(raw_info2, ticker_fallback=ticker2)
 
                 fundamentals_text2 = logic.build_fundamentals_text(data2)
 
-                try:
-                    news2 = stock2.news
-                except Exception:
-                    news2 = []
+                news2 = get_stock_news(ticker2)
 
                 news_text2 = logic.build_news_text(news2)
 
